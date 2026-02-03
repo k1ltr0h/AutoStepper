@@ -23,12 +23,12 @@ public class SMGenerator {
     private static String Header = 
             "#TITLE:$TITLE;\n" +
             "#SUBTITLE:;\n" +
-            "#ARTIST:AutoStepper by phr00t.com;\n" +
+            "#ARTIST:$ARTIST;\n" +
             "#TITLETRANSLIT:;\n" +
             "#SUBTITLETRANSLIT:;\n" +
             "#ARTISTTRANSLIT:;\n" +
-            "#GENRE:;\n" +
-            "#CREDIT:AutoStepper by phr00t.com;\n" +
+            "#GENRE:$GENRE;\n" +
+            "#CREDIT:$CREDIT;\n" +
             "#BANNER:$BGIMAGE;\n" +
             "#BACKGROUND:$BGIMAGE;\n" +
             "#LYRICSPATH:;\n" +
@@ -38,30 +38,16 @@ public class SMGenerator {
             "#SAMPLESTART:30.0;\n" +
             "#SAMPLELENGTH:30.0;\n" +
             "#SELECTABLE:YES;\n" +
-            "#BPMS:0.000000=$BPM;\n" +
+            "#BPMS:$BPMS;\n" +
             "#STOPS:;\n" +
             "#KEYSOUNDS:;\n" +
             "#ATTACKS:;";
     
-    public static String Challenge =
-            "Challenge:\n" +
-            "     10:";
-
-    public static String Hard =
-            "Hard:\n" +
-            "     8:";
-
-    public static String Medium =
-            "Medium:\n" +
-            "     6:";
-
-    public static String Easy =
-            "Easy:\n" +
-            "     4:";
-
-    public static String Beginner =
-            "Beginner:\n" +
-            "     2:";
+    public static final String Challenge = "Challenge";
+    public static final String Hard = "Hard";
+    public static final String Medium = "Medium";
+    public static final String Easy = "Easy";
+    public static final String Beginner = "Beginner";
     
     private static String NoteFramework =
             "//---------------dance-single - ----------------\n" +
@@ -69,7 +55,7 @@ public class SMGenerator {
             "     dance-single:\n" +
             "     :\n" +
             "     $DIFFICULTY\n" +
-            "     0.733800,0.772920,0.048611,0.850698,0.060764,634.000000,628.000000,6.000000,105.000000,8.000000,0.000000,0.733800,0.772920,0.048611,0.850698,0.060764,634.000000,628.000000,6.000000,105.000000,8.000000,0.000000:\n" +
+            "     $RADAR:\n" +
             "$NOTES\n" +
             ";\n\n";
 
@@ -85,21 +71,39 @@ public class SMGenerator {
                 os.write(buffer, 0, length);
             }
         } finally {
-            is.close();
-            os.close();
+            if (is != null) {
+                try { is.close(); } catch (IOException e) { }
+            }
+            if (os != null) {
+                try { os.close(); } catch (IOException e) { }
+            }
         }
     }    
     
-    public static void AddNotes(BufferedWriter smfile, String difficulty, String notes) {
+    public static void AddNotes(BufferedWriter smfile, String difficultyName, StepGenerator.NoteData noteData) {
         try {
-            smfile.write(NoteFramework.replace("$DIFFICULTY", difficulty).replace("$NOTES", notes));
-        } catch(Exception e) { }
+            if (smfile == null) return;
+            String difficulty = buildDifficulty(difficultyName, noteData.meter);
+            smfile.write(NoteFramework.replace("$DIFFICULTY", difficulty)
+                                      .replace("$RADAR", noteData.getRadarString())
+                                      .replace("$NOTES", noteData.notes));
+        } catch(Exception e) {
+            System.err.println("Failed to write notes: " + e.getMessage());
+        }
+    }
+    
+    private static String buildDifficulty(String name, int meter) {
+        return name + ":\n" +
+               "     " + meter + ":";
     }
     
     public static void Complete(BufferedWriter smfile) {
         try {
+            if (smfile == null) return;
             smfile.close();
-        } catch(Exception e) { }
+        } catch(Exception e) {
+            System.err.println("Failed to close SM file: " + e.getMessage());
+        }
     }
 
     public static File getSMFile(File songFile, String outputdir) {
@@ -108,10 +112,22 @@ public class SMGenerator {
         return new File(dir, filename + ".sm");
     }
     
-    public static BufferedWriter GenerateSM(float BPM, float startTime, File songfile, String outputdir) {
+    private static String sanitizeTag(String value) {
+        if (value == null) return "";
+        return value.replace(";", " ").replace("\n", " ").replace("\r", " ").trim();
+    }
+    
+    public static BufferedWriter GenerateSM(TempoMap tempoMap, float startTime, File songfile, String outputdir, SongMeta meta) {
         String filename = songfile.getName();
         String songname = filename.replace(".mp3", " ").replace(".wav", " ").replace(".com", " ").replace(".org", " ").replace(".info", " ");
-        String shortName = songname.length() > 30 ? songname.substring(0, 30) : songname;
+        String title = sanitizeTag(meta != null ? meta.title : "");
+        if (title.isEmpty()) title = songname;
+        String shortName = title.length() > 60 ? title.substring(0, 60) : title;
+        String artist = sanitizeTag(meta != null ? meta.artist : "");
+        if (artist.isEmpty()) artist = "Unknown Artist";
+        String genre = sanitizeTag(meta != null ? meta.genre : "");
+        String credit = sanitizeTag(meta != null ? meta.credit : "");
+        if (credit.isEmpty()) credit = "AutoStepper by phr00t.com";
         File dir = new File(outputdir, filename + "_dir/");
         dir.mkdirs();
         File smfile = new File(dir, filename + ".sm");
@@ -130,10 +146,18 @@ public class SMGenerator {
             smfile.delete();
             copyFileUsingStream(songfile, new File(dir, filename));
             BufferedWriter writer = new BufferedWriter(new FileWriter(smfile));
-            writer.write(Header.replace("$TITLE", shortName).replace("$BGIMAGE", imgFileName).replace("$MUSICFILE", filename)
-                         .replace("$STARTTIME", Float.toString(startTime + AutoStepper.STARTSYNC)).replace("$BPM", Float.toString(BPM)));
+            writer.write(Header.replace("$TITLE", shortName)
+                         .replace("$ARTIST", artist)
+                         .replace("$GENRE", genre)
+                         .replace("$CREDIT", credit)
+                         .replace("$BGIMAGE", imgFileName)
+                         .replace("$MUSICFILE", filename)
+                         .replace("$STARTTIME", Float.toString(startTime + AutoStepper.STARTSYNC))
+                         .replace("$BPMS", tempoMap.toBpmsString()));
             return writer;
-        } catch(Exception e) {}
+        } catch(Exception e) {
+            System.err.println("Failed to generate SM file for: " + songfile.getAbsolutePath() + " (" + e.getMessage() + ")");
+        }
         return null;
     }
 }

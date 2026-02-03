@@ -16,9 +16,36 @@ The arguments are:
 
     input=[file/dir] output=[songs dir] duration=[seconds to process] tap=[true/false] tapsync=[offset time in seconds for tap, default: -0.11] hard=[true/false] updatesm=[true/false]
     
+
 Example:
 
     java -jar AutoStepper.jar input="./songs/" duration=130 hard=true
+
+**Manual build (Windows CMD)**
+These commands do a manual build in Windows CMD: they compile the Java sources in the repo and then run the program using the libraries (`lib\*.jar`) without packaging a new `.jar`.
+
+```bat
+rmdir /s /q build 2>nul
+mkdir build\classes
+dir /s /b src\*.java > build\sources.txt
+javac -encoding UTF-8 -cp "lib\*" -d build\classes @build\sources.txt
+java -cp "build\classes;lib\*" autostepper.AutoStepper input="C:\Users\k1ltr0\Music\mr_kitty-lost_children.mp3" duration=327 hard=true
+```
+
+1. `rmdir /s /q build 2>nul`  
+Deletes the entire `build` folder if it exists. `/s` removes subfolders and files, `/q` suppresses confirmation, and `2>nul` hides the error if `build` doesn't exist.  
+Why: avoids mixing old `.class` files with new ones.
+1. `mkdir build\classes`  
+Creates the folder where compiled `.class` files will go.  
+Why: `javac` needs a destination for compiled output.
+1. `dir /s /b src\*.java > build\sources.txt`  
+Finds all `.java` files under `src` (recursively). `/b` is "bare format" (paths only).  
+Why: lets you pass a full source list to `javac` without typing them one by one.
+1. `javac -encoding UTF-8 -cp "lib\*" -d build\classes @build\sources.txt`  
+Compiles the project. `-encoding UTF-8` avoids issues with accented characters. `-cp "lib\*"` includes all `.jar` dependencies in `lib`. `-d build\classes` writes `.class` files into `build\classes`. `@build\sources.txt` loads the source list from the file.  
+Result: compiled classes in `build\classes\...`.
+1. `java -cp "build\classes;lib\*" autostepper.AutoStepper ...`  
+Runs the program. `-cp "build\classes;lib\*"` includes your compiled code and libraries. On Windows the classpath separator is `;` (on Linux/Mac it's `:`). `autostepper.AutoStepper` is the `main` class. The remaining arguments (`input=... duration=... hard=true`) are AutoStepper args.
 
 If you set tap=true, AutoStepper won't try and automatically calculate the BPM or offset, and will instead prompt you to hit ENTER along with 30 consecutive beats. AutoStepper will then do the rest.
 
@@ -39,7 +66,7 @@ Copyright (c) 2018 Phr00t's Software
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software with only commercial use restrictions & a requirement to
-attribute Phr00t's Software. You are free to to use, copy, modify, merge, publish,
+attribute Phr00t's Software. You are free to to use, copy, modify, merge, publish, 
 distribute this Software for private, personal & non-commercial uses as long
 as Phr00t's Software is attributed.
 
@@ -47,9 +74,9 @@ The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.

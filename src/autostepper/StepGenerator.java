@@ -2,6 +2,7 @@ package autostepper;
 
 import gnu.trove.list.array.TFloatArrayList;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.Random;
 
 /**
@@ -43,6 +44,7 @@ public class StepGenerator {
     static ArrayList<char[]> AllNoteLines = new ArrayList<>();
     static float lastKickTime = 0f;
     static int commaSeperator, commaSeperatorReset, mineCount, holdRun;
+    static int lastStepIndex;
     
     private static char[] getHoldStops(int currentHoldCount, float time, int holds) {
         char[] holdstops = new char[4];
@@ -130,6 +132,7 @@ public class StepGenerator {
         orig[2] = noteLine[2];
         orig[3] = noteLine[3];
         float[] willhold = new float[4]; 
+        int lastPlacedIndex = -1;
         do {
             int stepcount = steps, holdcount = holds;
             noteLine[0] = orig[0];
@@ -142,6 +145,13 @@ public class StepGenerator {
             willhold[3] = 0f;
             while(stepcount > 0) {
                 int stepindex = rand.nextInt(4);
+                if( steps == 1 && lastStepIndex >= 0 ) {
+                    int attempts = 0;
+                    while( attempts < 6 && stepindex == lastStepIndex ) {
+                        stepindex = rand.nextInt(4);
+                        attempts++;
+                    }
+                }
                 if( noteLine[stepindex] != EMPTY || holding[stepindex] > 0f ) continue;
                 if( holdcount > 0 ) {
                     noteLine[stepindex] = HOLD;
@@ -151,6 +161,7 @@ public class StepGenerator {
                     noteLine[stepindex] = STEP;
                     stepcount--;
                 }
+                lastPlacedIndex = stepindex;
             }
             // put in a mine?
             if( mines ) {
@@ -172,6 +183,7 @@ public class StepGenerator {
         if( getHoldCount() == 0 ) {
             holdRun = 0;
         } else holdRun++;
+        if( lastPlacedIndex >= 0 ) lastStepIndex = lastPlacedIndex;
         AllNoteLines.add(noteLine);
     }
     
@@ -213,11 +225,147 @@ public class StepGenerator {
         return true;
     }
     
-    public static String GenerateNotes(int stepGranularity, int skipChance,
+    private static float clamp01(float value) {
+        if (value < 0f) return 0f;
+        if (value > 1f) return 1f;
+        return value;
+    }
+    
+    public static class NoteData {
+        public final String notes;
+        public final int tapCount;
+        public final int holdCount;
+        public final int mineCount;
+        public final int jumpCount;
+        public final int offbeatSteps;
+        public final int totalSteps;
+        public final int totalLines;
+        public final int stepGranularity;
+        public final float totalTime;
+        public final float stream;
+        public final float voltage;
+        public final float air;
+        public final float freeze;
+        public final float chaos;
+        public final int meter;
+        
+        public NoteData(String notes,
+                        int tapCount,
+                        int holdCount,
+                        int mineCount,
+                        int jumpCount,
+                        int offbeatSteps,
+                        int totalSteps,
+                        int totalLines,
+                        int stepGranularity,
+                        float totalTime,
+                        float stream,
+                        float voltage,
+                        float air,
+                        float freeze,
+                        float chaos,
+                        int meter) {
+            this.notes = notes;
+            this.tapCount = tapCount;
+            this.holdCount = holdCount;
+            this.mineCount = mineCount;
+            this.jumpCount = jumpCount;
+            this.offbeatSteps = offbeatSteps;
+            this.totalSteps = totalSteps;
+            this.totalLines = totalLines;
+            this.stepGranularity = stepGranularity;
+            this.totalTime = totalTime;
+            this.stream = stream;
+            this.voltage = voltage;
+            this.air = air;
+            this.freeze = freeze;
+            this.chaos = chaos;
+            this.meter = meter;
+        }
+        
+        public String getRadarString() {
+            return String.format(Locale.US, "%.6f,%.6f,%.6f,%.6f,%.6f",
+                    stream, voltage, air, freeze, chaos);
+        }
+    }
+
+    public static NoteData withMeter(NoteData src, int meter) {
+        int clamped = meter;
+        if (clamped < 1) clamped = 1;
+        if (clamped > 20) clamped = 20;
+        return new NoteData(src.notes,
+                src.tapCount,
+                src.holdCount,
+                src.mineCount,
+                src.jumpCount,
+                src.offbeatSteps,
+                src.totalSteps,
+                src.totalLines,
+                src.stepGranularity,
+                src.totalTime,
+                src.stream,
+                src.voltage,
+                src.air,
+                src.freeze,
+                src.chaos,
+                clamped);
+    }
+    
+    private static NoteData buildNoteData(String notes, int stepGranularity, float totalTime) {
+        int tapCount = 0, holdCount = 0, mineCountLocal = 0, jumpCount = 0, offbeatSteps = 0;
+        int totalLines = AllNoteLines.size();
+        int stepsInMeasure = 0;
+        int maxStepsInMeasure = 0;
+        int measureLineCount = 0;
+        for (int i = 0; i < AllNoteLines.size(); i++) {
+            char[] line = AllNoteLines.get(i);
+            int stepsInLine = 0;
+            for (int c = 0; c < 4; c++) {
+                if (line[c] == STEP) {
+                    tapCount++;
+                    stepsInLine++;
+                } else if (line[c] == HOLD) {
+                    holdCount++;
+                    stepsInLine++;
+                } else if (line[c] == MINE) {
+                    mineCountLocal++;
+                }
+            }
+            if (stepsInLine >= 2) jumpCount++;
+            if (stepsInLine > 0 && stepGranularity > 0 && (i % stepGranularity) != 0) {
+                offbeatSteps += stepsInLine;
+            }
+            stepsInMeasure += stepsInLine;
+            measureLineCount++;
+            if (measureLineCount == stepGranularity * 4) {
+                if (stepsInMeasure > maxStepsInMeasure) maxStepsInMeasure = stepsInMeasure;
+                stepsInMeasure = 0;
+                measureLineCount = 0;
+            }
+        }
+        if (measureLineCount > 0 && stepsInMeasure > maxStepsInMeasure) {
+            maxStepsInMeasure = stepsInMeasure;
+        }
+        int totalSteps = tapCount + holdCount;
+        float totalBeats = stepGranularity > 0 ? (float) totalLines / (float) stepGranularity : 0f;
+        float stream = totalBeats > 0f ? clamp01((totalSteps / totalBeats) / 2f) : 0f;
+        float voltage = totalBeats > 0f ? clamp01((maxStepsInMeasure / 4f) / 2f) : 0f;
+        float air = totalBeats > 0f ? clamp01((float) jumpCount / totalBeats) : 0f;
+        float freeze = totalBeats > 0f ? clamp01((float) holdCount / totalBeats) : 0f;
+        float chaos = totalSteps > 0f ? clamp01((float) offbeatSteps / (float) totalSteps) : 0f;
+        float meterScore = (stream * 8f) + (voltage * 5f) + (air * 4f) + (freeze * 3f) + (chaos * 2f);
+        int meter = Math.round(meterScore);
+        if (meter < 1) meter = 1;
+        if (meter > 20) meter = 20;
+        return new NoteData(notes, tapCount, holdCount, mineCountLocal, jumpCount, offbeatSteps, totalSteps, totalLines,
+                stepGranularity, totalTime, stream, voltage, air, freeze, chaos, meter);
+    }
+    
+    public static NoteData GenerateNotes(int stepGranularity, int skipChance,
                                        TFloatArrayList[] manyTimes,
                                        TFloatArrayList[] fewTimes,
                                        TFloatArrayList FFTAverages, TFloatArrayList FFTMaxes, float timePerFFT,
-                                       float timePerBeat, float timeOffset, float totalTime,
+                                       TempoMap tempoMap, float timeOffset, float totalTime,
                                        boolean allowMines) {      
         // reset variables
         AllNoteLines.clear();
@@ -228,12 +376,16 @@ public class StepGenerator {
         holding[2] = 0f;
         holding[3] = 0f;
         lastKickTime = 0f;
+        lastStepIndex = -1;
         commaSeperatorReset = 4 * stepGranularity;
-        float lastSkippedTime = -10f;
-        int totalStepsMade = 0, timeIndex = 0;
-        boolean skippedLast = false;
-        float timeGranularity = timePerBeat / stepGranularity;
-        for(float t = timeOffset; t <= totalTime; t += timeGranularity) {
+        int timeIndex = 0;
+        for(;;) {
+            float beatPos = stepGranularity > 0 ? (float) timeIndex / (float) stepGranularity : 0f;
+            float bpm = tempoMap.getBpmAtBeat(beatPos);
+            float timePerBeat = 60f / bpm;
+            float timeGranularity = timePerBeat / stepGranularity;
+            float t = timeOffset + tempoMap.timeAtBeat(beatPos);
+            if (t > totalTime) break;
             int steps = 0, holds = 0;
             String lastLine = getLastNoteLine();
             if( t > 0f ) {
@@ -249,7 +401,8 @@ public class StepGenerator {
                 } else if( fftmax < 0.5f ) {
                     holds = fftmax < 0.25f ? -2 : -1;
                 }
-                if( nearKick && (nearSnare || nearEnergy) && timeIndex % 2 == 0 &&
+                boolean onBeat = stepGranularity > 0 && (timeIndex % stepGranularity) == 0;
+                if( nearKick && (nearSnare || nearEnergy) && onBeat &&
                     steps > 0 && lastLine.contains("1") == false && lastLine.contains("2") == false && lastLine.contains("3") == false ) {
                      // only jump in high areas, on solid beats (not half beats)
                     steps = 2;
@@ -257,41 +410,40 @@ public class StepGenerator {
                 // wait, are we skipping new steps?
                 // if we just got done from a jump, don't have a half beat
                 // if we are holding something, don't do half-beat steps
-                if( timeIndex % 2 == 1 &&
-                    (skipChance > 1 && timeIndex % 2 == 1 && rand.nextInt(skipChance) > 0 || getHoldCount() > 0) ||
-                    t - lastJumpTime < timePerBeat ) {
+                boolean shouldSkipOffbeat = !onBeat && ((skipChance > 1 && rand.nextInt(skipChance) > 0) || getHoldCount() > 0);
+                boolean tooSoonAfterJump = t - lastJumpTime < timePerBeat;
+                if( shouldSkipOffbeat || tooSoonAfterJump ) {
                     steps = 0;
                     if( holds > 0 ) holds = 0;
                 }                
             }
             if( AutoStepper.DEBUG_STEPS ) {
-                makeNoteLine(lastLine, t, timeIndex % 2 == 0 ? 1 : 0, -2, allowMines);
+                boolean onBeat = stepGranularity > 0 && (timeIndex % stepGranularity) == 0;
+                makeNoteLine(lastLine, t, onBeat ? 1 : 0, -2, allowMines);
             } else makeNoteLine(lastLine, t, steps, holds, allowMines);
-            totalStepsMade += steps;
             timeIndex++;
         }
         // ok, put together AllNotes
-        String AllNotes = "";
+        StringBuilder allNotes = new StringBuilder();
         commaSeperator = commaSeperatorReset;
         for(int i=0;i<AllNoteLines.size();i++) {
-            AllNotes += getNoteLineIndex(i) + "\n";
+            allNotes.append(getNoteLineIndex(i)).append("\n");
             commaSeperator--;
             if( commaSeperator == 0 ) {
-                AllNotes += ",\n";
+                allNotes.append(",\n");
                 commaSeperator = commaSeperatorReset;
             }
         }
         // fill out the last empties
         while( commaSeperator > 0 ) {
-            AllNotes += "3333";
+            allNotes.append("0000");
             commaSeperator--;
-            if( commaSeperator > 0 ) AllNotes += "\n";
+            if( commaSeperator > 0 ) allNotes.append("\n");
         }
-        int _stepCount = AllNotes.length() - AllNotes.replace("1", "").length();
-        int _holdCount = AllNotes.length() - AllNotes.replace("2", "").length();
-        int _mineCount = AllNotes.length() - AllNotes.replace("M", "").length();
-        System.out.println("Steps: " + _stepCount + ", Holds: " + _holdCount + ", Mines: " + _mineCount);
-        return AllNotes;
+        String allNotesString = allNotes.toString();
+        NoteData noteData = buildNoteData(allNotesString, stepGranularity, totalTime);
+        System.out.println("Steps: " + noteData.tapCount + ", Holds: " + noteData.holdCount + ", Mines: " + noteData.mineCount);
+        return noteData;
     }
     
 }
